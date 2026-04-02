@@ -33,3 +33,106 @@ class InvertFilter(ImageFilter):
         out = image.convertToFormat(QImage.Format.Format_ARGB32)
         out.invertPixels(QImage.InvertMode.InvertRgb)
         return out
+
+
+class BoxBlurFilter(ImageFilter):
+    meta = FilterMeta(
+        key="box_blur",
+        display_name="Box Blur",
+        shader_path=None,
+    )
+
+    def apply(self, image: QImage) -> QImage:
+        source = image.convertToFormat(QImage.Format.Format_ARGB32)
+        width = source.width()
+        height = source.height()
+        out = QImage(width, height, QImage.Format.Format_ARGB32)
+        radius = 1
+
+        for y in range(height):
+            for x in range(width):
+                r_total = 0
+                g_total = 0
+                b_total = 0
+                a_total = 0
+                count = 0
+
+                for ky in range(-radius, radius + 1):
+                    yy = y + ky
+                    if yy < 0 or yy >= height:
+                        continue
+                    for kx in range(-radius, radius + 1):
+                        xx = x + kx
+                        if xx < 0 or xx >= width:
+                            continue
+                        c = source.pixelColor(xx, yy)
+                        r_total += c.red()
+                        g_total += c.green()
+                        b_total += c.blue()
+                        a_total += c.alpha()
+                        count += 1
+
+                out.setPixelColor(
+                    x,
+                    y,
+                    QColor(
+                        r_total // count,
+                        g_total // count,
+                        b_total // count,
+                        a_total // count,
+                    ),
+                )
+        return out
+
+
+class EdgeDetectionFilter(ImageFilter):
+    meta = FilterMeta(
+        key="edge_detect",
+        display_name="Edge Detection",
+        shader_path=None,
+    )
+
+    def apply(self, image: QImage) -> QImage:
+        source = image.convertToFormat(QImage.Format.Format_ARGB32)
+        width = source.width()
+        height = source.height()
+        out = QImage(width, height, QImage.Format.Format_ARGB32)
+
+        gray: list[list[int]] = [[0] * width for _ in range(height)]
+        for y in range(height):
+            for x in range(width):
+                c = source.pixelColor(x, y)
+                gray[y][x] = int(0.299 * c.red() + 0.587 * c.green() + 0.114 * c.blue())
+
+        gx_kernel = [
+            [-1, 0, 1],
+            [-2, 0, 2],
+            [-1, 0, 1],
+        ]
+        gy_kernel = [
+            [-1, -2, -1],
+            [0, 0, 0],
+            [1, 2, 1],
+        ]
+
+        for y in range(height):
+            for x in range(width):
+                gx = 0
+                gy = 0
+
+                for ky in range(-1, 2):
+                    yy = y + ky
+                    if yy < 0 or yy >= height:
+                        continue
+                    for kx in range(-1, 2):
+                        xx = x + kx
+                        if xx < 0 or xx >= width:
+                            continue
+                        intensity = gray[yy][xx]
+                        gx += intensity * gx_kernel[ky + 1][kx + 1]
+                        gy += intensity * gy_kernel[ky + 1][kx + 1]
+
+                magnitude = min(255, int((gx * gx + gy * gy) ** 0.5))
+                alpha = source.pixelColor(x, y).alpha()
+                out.setPixelColor(x, y, QColor(magnitude, magnitude, magnitude, alpha))
+        return out
