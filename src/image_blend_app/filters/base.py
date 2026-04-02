@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from PySide6.QtGui import QImage
 
+from image_blend_app.renderer.shader_runtime import ShaderRuntime
 
 @dataclass(frozen=True)
 class FilterMeta:
@@ -17,7 +18,7 @@ class ImageFilter(ABC):
     meta: FilterMeta
 
     @abstractmethod
-    def apply(self, image: QImage) -> QImage:
+    def apply(self, image: QImage, shader_runtime: ShaderRuntime | None = None) -> QImage:
         raise NotImplementedError
 
 

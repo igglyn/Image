@@ -12,7 +12,12 @@ class GrayscaleFilter(ImageFilter):
         shader_path="shaders/grayscale.comp",
     )
 
-    def apply(self, image: QImage) -> QImage:
+    def apply(self, image: QImage, shader_runtime=None) -> QImage:
+        if shader_runtime is not None:
+            shader_result = shader_runtime.run(self.meta.key, self.meta.shader_path, image)
+            if shader_result is not None:
+                return shader_result
+
         out = image.convertToFormat(QImage.Format.Format_ARGB32)
         for y in range(out.height()):
             for x in range(out.width()):
@@ -29,7 +34,12 @@ class InvertFilter(ImageFilter):
         shader_path="shaders/invert.comp",
     )
 
-    def apply(self, image: QImage) -> QImage:
+    def apply(self, image: QImage, shader_runtime=None) -> QImage:
+        if shader_runtime is not None:
+            shader_result = shader_runtime.run(self.meta.key, self.meta.shader_path, image)
+            if shader_result is not None:
+                return shader_result
+
         out = image.convertToFormat(QImage.Format.Format_ARGB32)
         out.invertPixels(QImage.InvertMode.InvertRgb)
         return out
@@ -39,10 +49,10 @@ class BoxBlurFilter(ImageFilter):
     meta = FilterMeta(
         key="box_blur",
         display_name="Box Blur",
-        shader_path=None,
+        shader_path="shaders/box_blur.comp",
     )
 
-    def apply(self, image: QImage) -> QImage:
+    def apply(self, image: QImage, shader_runtime=None) -> QImage:
         source = image.convertToFormat(QImage.Format.Format_ARGB32)
         width = source.width()
         height = source.height()
@@ -89,10 +99,10 @@ class EdgeDetectionFilter(ImageFilter):
     meta = FilterMeta(
         key="edge_detect",
         display_name="Edge Detection",
-        shader_path=None,
+        shader_path="shaders/edge_detect.comp",
     )
 
-    def apply(self, image: QImage) -> QImage:
+    def apply(self, image: QImage, shader_runtime=None) -> QImage:
         source = image.convertToFormat(QImage.Format.Format_ARGB32)
         width = source.width()
         height = source.height()

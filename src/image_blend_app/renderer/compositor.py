@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from PySide6.QtGui import QImage, QPainter
 
 from image_blend_app.filters.base import FilterRegistry
 from image_blend_app.models import FilterStackItem, ImageLayer, LayerBranch
+from image_blend_app.renderer.shader_runtime import ShaderRuntime
 
 
 BLEND_MODE_MAP = {
@@ -35,6 +37,9 @@ class LayerCompositor:
     def __init__(self, filter_registry: FilterRegistry) -> None:
         self._filters = filter_registry
         self._branch_cache: dict[tuple[str, str], BranchCache] = {}
+        self._shader_runtime = ShaderRuntime(shader_root=Path(__file__).resolve().parent.parent)
+        for image_filter in self._filters.all():
+            self._shader_runtime.register(image_filter.meta.key, image_filter.meta.shader_path)
 
     def composite(self, layers: list[ImageLayer]) -> QImage | None:
         visible_layers = [layer for layer in layers if layer.visible]
@@ -133,7 +138,7 @@ class LayerCompositor:
             if item.enabled:
                 image_filter = self._filters.get(item.filter_key)
                 if image_filter is not None:
-                    filtered = image_filter.apply(current)
+                    filtered = image_filter.apply(current, shader_runtime=self._shader_runtime)
                     current = self._blend_images(current, filtered, item)
             stage_images.append(QImage(current))
 
