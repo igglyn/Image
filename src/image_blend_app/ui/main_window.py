@@ -89,48 +89,23 @@ class MainWindow(QMainWindow):
         middle_panel = QVBoxLayout()
         root_layout.addLayout(middle_panel, 1)
 
-        middle_panel.addWidget(QLabel("Layer Branches"))
-        self.branch_list = QListWidget()
-        self.branch_list.currentRowChanged.connect(self._on_branch_selected)
-        self.branch_list.itemChanged.connect(self._on_branch_enabled_changed)
-        middle_panel.addWidget(self.branch_list)
+        middle_panel.addWidget(QLabel("Import Area (Source Images In Play)"))
+        self.source_images_list = QListWidget()
+        self.source_images_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        middle_panel.addWidget(self.source_images_list)
 
-        branch_buttons = QHBoxLayout()
-        add_branch_btn = QPushButton("New From Source")
-        add_branch_btn.clicked.connect(self._add_branch)
-        dup_branch_btn = QPushButton("Duplicate")
-        dup_branch_btn.clicked.connect(self._duplicate_branch)
-        remove_branch_btn = QPushButton("Remove")
-        remove_branch_btn.clicked.connect(self._remove_branch)
-        branch_buttons.addWidget(add_branch_btn)
-        branch_buttons.addWidget(dup_branch_btn)
-        branch_buttons.addWidget(remove_branch_btn)
-        middle_panel.addLayout(branch_buttons)
+        import_controls = QHBoxLayout()
+        add_sources_btn = QPushButton("Add Source Image(s)")
+        add_sources_btn.clicked.connect(self._import_images)
+        import_controls.addWidget(add_sources_btn)
+        middle_panel.addLayout(import_controls)
 
-        branch_controls = QFormLayout()
-        self.branch_source_combo = QComboBox()
-        self.branch_source_combo.currentIndexChanged.connect(self._on_branch_source_changed)
-        branch_controls.addRow("Branch Source", self.branch_source_combo)
-
-        self.branch_blend_combo = QComboBox()
-        for mode in BLEND_MODE_MAP:
-            self.branch_blend_combo.addItem(mode)
-        self.branch_blend_combo.currentTextChanged.connect(self._on_branch_blend_changed)
-        branch_controls.addRow("Branch Blend", self.branch_blend_combo)
-
-        self.branch_opacity_slider = QSlider(Qt.Orientation.Horizontal)
-        self.branch_opacity_slider.setRange(0, 100)
-        self.branch_opacity_slider.setValue(100)
-        self.branch_opacity_slider.valueChanged.connect(self._on_branch_opacity_changed)
-        branch_controls.addRow("Branch Opacity", self.branch_opacity_slider)
-        middle_panel.addLayout(branch_controls)
-
-        middle_panel.addWidget(QLabel("Available Filters (double-click to add to selected branch)"))
+        middle_panel.addWidget(QLabel("Available Filters (double-click to add to selected layer)"))
         self.available_filters = QListWidget()
         self.available_filters.itemDoubleClicked.connect(self._on_add_filter)
         middle_panel.addWidget(self.available_filters)
 
-        middle_panel.addWidget(QLabel("Selected Branch Filter Stack"))
+        middle_panel.addWidget(QLabel("Selected Layer Filter Stack"))
         self.stack_list = QListWidget()
         self.stack_list.currentRowChanged.connect(self._on_stack_item_selected)
         self.stack_list.itemChanged.connect(self._on_stack_enabled_changed)
@@ -187,10 +162,9 @@ class MainWindow(QMainWindow):
         layer = self._active_layer()
         if layer is None:
             return None
-        idx = self.branch_list.currentRow()
-        if idx < 0 or idx >= len(layer.branches):
+        if not layer.branches:
             return None
-        return layer.branches[idx]
+        return layer.branches[0]
 
     def _active_stack_item(self) -> FilterStackItem | None:
         branch = self._active_branch()
@@ -210,6 +184,7 @@ class MainWindow(QMainWindow):
             item.setCheckState(Qt.CheckState.Checked if layer.visible else Qt.CheckState.Unchecked)
             self.layer_list.addItem(item)
         self.layer_list.blockSignals(False)
+        self._refresh_source_images_list()
 
         if not self._layers:
             return
@@ -217,6 +192,12 @@ class MainWindow(QMainWindow):
             selected_index = min(len(self._layers) - 1, self.layer_list.currentRow())
         selected_index = max(0, min(selected_index, len(self._layers) - 1))
         self.layer_list.setCurrentRow(selected_index)
+
+    def _refresh_source_images_list(self) -> None:
+        self.source_images_list.clear()
+        for index, layer in enumerate(self._layers, start=1):
+            source_path = str(layer.source_path) if str(layer.source_path) else "Untitled"
+            self.source_images_list.addItem(f"{index}. {layer.name} — {source_path}")
 
     def _import_images(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(self, "Select images", "", "Images (*.png *.jpg *.jpeg *.bmp)")
@@ -237,9 +218,7 @@ class MainWindow(QMainWindow):
         self._layers.pop(idx)
         self._rebuild_layer_list(selected_index=max(0, idx - 1))
         if not self._layers:
-            self.branch_list.clear()
             self.stack_list.clear()
-            self.branch_source_combo.clear()
         self._render()
 
     def _duplicate_layer(self) -> None:
@@ -317,59 +296,11 @@ class MainWindow(QMainWindow):
         self.layer_blend_combo.setCurrentText(layer.blend_mode)
         self.layer_opacity_slider.setValue(int(layer.opacity * 100))
         self.layer_visible_checkbox.setChecked(layer.visible)
-        self._populate_branches(layer)
-        self._render()
-
-    def _populate_branches(self, layer: ImageLayer) -> None:
-        self.branch_list.blockSignals(True)
-        self.branch_list.clear()
-        for branch in layer.branches:
-            src_label = "Layer Source"
-            if branch.source_branch_id is not None:
-                src_branch = next((b for b in layer.branches if b.branch_id == branch.source_branch_id), None)
-                src_label = src_branch.name if src_branch else "Missing Branch"
-            item = QListWidgetItem(f"{branch.name}  [from: {src_label}]")
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Checked if branch.enabled else Qt.CheckState.Unchecked)
-            self.branch_list.addItem(item)
-        self.branch_list.blockSignals(False)
-        if layer.branches:
-            self.branch_list.setCurrentRow(0)
+        base_branch = self._active_branch()
+        if base_branch is None:
+            self.stack_list.clear()
         else:
-            self.stack_list.clear()
-            self.branch_source_combo.clear()
-
-    def _refresh_branch_source_options(self, selected_branch: LayerBranch | None) -> None:
-        layer = self._active_layer()
-        if layer is None:
-            self.branch_source_combo.clear()
-            return
-
-        self.branch_source_combo.blockSignals(True)
-        self.branch_source_combo.clear()
-        self.branch_source_combo.addItem("Layer Source", None)
-        for branch in layer.branches:
-            if selected_branch is not None and branch.branch_id == selected_branch.branch_id:
-                continue
-            self.branch_source_combo.addItem(branch.name, branch.branch_id)
-
-        desired_id = selected_branch.source_branch_id if selected_branch else None
-        idx = self.branch_source_combo.findData(desired_id)
-        if idx < 0:
-            idx = 0
-        self.branch_source_combo.setCurrentIndex(idx)
-        self.branch_source_combo.blockSignals(False)
-
-    def _on_branch_selected(self, row: int) -> None:
-        branch = self._active_branch()
-        if branch is None:
-            self.stack_list.clear()
-            self._refresh_branch_source_options(None)
-            return
-        self._refresh_branch_source_options(branch)
-        self.branch_blend_combo.setCurrentText(branch.blend_mode)
-        self.branch_opacity_slider.setValue(int(branch.opacity * 100))
-        self._populate_stack(branch)
+            self._populate_stack(base_branch)
         self._render()
 
     def _populate_stack(self, branch: LayerBranch) -> None:
@@ -386,90 +317,6 @@ class MainWindow(QMainWindow):
         self.stack_list.blockSignals(False)
         if branch.filter_stack:
             self.stack_list.setCurrentRow(0)
-
-    def _add_branch(self) -> None:
-        layer = self._active_layer()
-        if layer is None:
-            return
-        source_branch_id = self.branch_source_combo.currentData()
-        branch = LayerBranch(
-            name=f"Branch {len(layer.branches) + 1}",
-            source_branch_id=source_branch_id,
-        )
-        layer.branches.append(branch)
-        self._populate_branches(layer)
-        self.branch_list.setCurrentRow(len(layer.branches) - 1)
-        self._render()
-
-    def _duplicate_branch(self) -> None:
-        layer = self._active_layer()
-        branch = self._active_branch()
-        if layer is None or branch is None:
-            return
-        copied_stack = [
-            FilterStackItem(
-                filter_key=item.filter_key,
-                enabled=item.enabled,
-                opacity=item.opacity,
-                blend_mode=item.blend_mode,
-            )
-            for item in branch.filter_stack
-        ]
-        layer.branches.append(
-            LayerBranch(
-                name=f"{branch.name} Copy",
-                enabled=branch.enabled,
-                opacity=branch.opacity,
-                blend_mode=branch.blend_mode,
-                source_branch_id=branch.source_branch_id,
-                filter_stack=copied_stack,
-            )
-        )
-        self._populate_branches(layer)
-        self.branch_list.setCurrentRow(len(layer.branches) - 1)
-        self._render()
-
-    def _remove_branch(self) -> None:
-        layer = self._active_layer()
-        idx = self.branch_list.currentRow()
-        if layer is None or idx < 0:
-            return
-        if len(layer.branches) == 1:
-            return
-
-        removed_branch_id = layer.branches[idx].branch_id
-        layer.branches.pop(idx)
-
-        for branch in layer.branches:
-            if branch.source_branch_id == removed_branch_id:
-                branch.source_branch_id = None
-
-        self._populate_branches(layer)
-        self.branch_list.setCurrentRow(max(0, idx - 1))
-        self._render()
-
-    def _on_branch_enabled_changed(self, row_item: QListWidgetItem) -> None:
-        layer = self._active_layer()
-        if layer is None:
-            return
-        idx = self.branch_list.row(row_item)
-        if idx < 0 or idx >= len(layer.branches):
-            return
-        layer.branches[idx].enabled = row_item.checkState() == Qt.CheckState.Checked
-        self._render()
-
-    def _on_branch_source_changed(self, _: int) -> None:
-        branch = self._active_branch()
-        if branch is None:
-            return
-        source_id = self.branch_source_combo.currentData()
-        branch.source_branch_id = source_id if source_id != branch.branch_id else None
-        layer = self._active_layer()
-        if layer is not None:
-            self._populate_branches(layer)
-            idx = next((i for i, b in enumerate(layer.branches) if b.branch_id == branch.branch_id), 0)
-            self.branch_list.setCurrentRow(idx)
-        self._render()
 
     def _on_layer_blend_changed(self, value: str) -> None:
         layer = self._active_layer()
@@ -493,20 +340,6 @@ class MainWindow(QMainWindow):
         current_item = self.layer_list.item(self.layer_list.currentRow())
         if current_item is not None:
             current_item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
-        self._render()
-
-    def _on_branch_blend_changed(self, value: str) -> None:
-        branch = self._active_branch()
-        if branch is None:
-            return
-        branch.blend_mode = value
-        self._render()
-
-    def _on_branch_opacity_changed(self, value: int) -> None:
-        branch = self._active_branch()
-        if branch is None:
-            return
-        branch.opacity = value / 100.0
         self._render()
 
     def _on_add_filter(self, item: QListWidgetItem) -> None:
