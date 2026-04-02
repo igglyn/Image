@@ -1,0 +1,30 @@
+// Vulkan compute shader for 3x3 box blur over RGBA8 images.
+#version 450
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(binding = 0, rgba8) uniform readonly image2D srcImage;
+layout(binding = 1, rgba8) uniform writeonly image2D dstImage;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(srcImage);
+
+    if (p.x >= size.x || p.y >= size.y) {
+        return;
+    }
+
+    vec4 accum = vec4(0.0);
+    float count = 0.0;
+
+    for (int ky = -1; ky <= 1; ++ky) {
+        for (int kx = -1; kx <= 1; ++kx) {
+            ivec2 samplePos = p + ivec2(kx, ky);
+            if (samplePos.x < 0 || samplePos.x >= size.x || samplePos.y < 0 || samplePos.y >= size.y) {
+                continue;
+            }
+            accum += imageLoad(srcImage, samplePos);
+            count += 1.0;
+        }
+    }
+
+    imageStore(dstImage, p, accum / max(count, 1.0));
+}

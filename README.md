@@ -38,6 +38,8 @@ image-blend-studio
 
 The compositor caches per-branch intermediate stages and only recomputes from the first changed filter step, reducing lag when toggling/changing filters in long stacks.
 
+Shader-backed filters are dispatched through a shared shader runtime hook, and all built-in effects now include matching compute shader sources (`grayscale`, `invert`, `box_blur`, `edge_detect`) so the render path is prepared for Vulkan execution.
+
 ## Next Steps
 
 1. Add project save/load (layers, branches, source links, stack state).
