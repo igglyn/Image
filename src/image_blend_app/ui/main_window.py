@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QMessageBox,
     QSlider,
     QTreeWidget,
     QTreeWidgetItem,
@@ -70,6 +71,15 @@ class MainWindow(QMainWindow):
         tree_buttons.addWidget(save_project_btn)
         tree_buttons.addWidget(load_project_btn)
         left_panel.addLayout(tree_buttons)
+
+        project_buttons = QHBoxLayout()
+        save_project_btn = QPushButton("Save Project")
+        save_project_btn.clicked.connect(self._save_project)
+        load_project_btn = QPushButton("Load Project")
+        load_project_btn.clicked.connect(self._load_project)
+        project_buttons.addWidget(save_project_btn)
+        project_buttons.addWidget(load_project_btn)
+        left_panel.addLayout(project_buttons)
 
         layer_buttons = QHBoxLayout()
         remove_layer_btn = QPushButton("Remove Image")
@@ -277,6 +287,45 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Load Project Failed", str(exc))
             return
         self._rebuild_structure_tree()
+        self._render()
+
+    def _save_project(self) -> None:
+        if not self._layers:
+            QMessageBox.information(self, "Save Project", "There are no layers to save.")
+            return
+        file, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save project",
+            "",
+            "Image Blend Project (*.json)",
+        )
+        if not file:
+            return
+        path = Path(file)
+        try:
+            save_project(path, self._layers)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Save Project Failed", str(exc))
+
+    def _load_project(self) -> None:
+        file, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load project",
+            "",
+            "Image Blend Project (*.json)",
+        )
+        if not file:
+            return
+        path = Path(file)
+        try:
+            loaded_layers = load_project(path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Load Project Failed", str(exc))
+            return
+        self._layers = loaded_layers
+        self._rebuild_layer_list(selected_index=0)
+        if not self._layers:
+            self.stack_list.clear()
         self._render()
 
     def _remove_layer(self) -> None:

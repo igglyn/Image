@@ -43,6 +43,14 @@ Projects can now be saved and loaded from the left panel with **Save** and **Loa
 - Load restores structure and attempts to reconnect each layer source image from `source_path`.
 - Format details: [`PROJECT_FORMAT.md`](PROJECT_FORMAT.md)
 
+## Project Save/Load
+
+Projects can now be saved and loaded from the left panel with **Save Project** and **Load Project**.
+
+- Save persists layer/branch/filter stack metadata into `project.json`.
+- Load restores structure and attempts to reconnect each layer source image from `source_path`.
+- Format details: [`PROJECT_FORMAT.md`](PROJECT_FORMAT.md)
+
 ## Performance Note
 
 The compositor caches per-branch intermediate stages and only recomputes from the first changed filter step, reducing lag when toggling/changing filters in long stacks.
