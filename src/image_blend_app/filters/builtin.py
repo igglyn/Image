@@ -14,7 +14,7 @@ class GrayscaleFilter(ImageFilter):
 
     def apply(self, image: QImage, shader_runtime=None, settings=None) -> QImage:
         if shader_runtime is not None:
-            shader_result = shader_runtime.run(self.meta.key, self.meta.shader_path, image)
+            shader_result = shader_runtime.run(self.meta.key, self.meta.shader_path, image, settings=settings)
             if shader_result is not None:
                 return shader_result
 
@@ -36,7 +36,7 @@ class InvertFilter(ImageFilter):
 
     def apply(self, image: QImage, shader_runtime=None, settings=None) -> QImage:
         if shader_runtime is not None:
-            shader_result = shader_runtime.run(self.meta.key, self.meta.shader_path, image)
+            shader_result = shader_runtime.run(self.meta.key, self.meta.shader_path, image, settings=settings)
             if shader_result is not None:
                 return shader_result
 
@@ -53,6 +53,11 @@ class BoxBlurFilter(ImageFilter):
     )
 
     def apply(self, image: QImage, shader_runtime=None, settings=None) -> QImage:
+        if shader_runtime is not None:
+            shader_result = shader_runtime.run(self.meta.key, self.meta.shader_path, image, settings=settings)
+            if shader_result is not None:
+                return shader_result
+
         source = image.convertToFormat(QImage.Format.Format_ARGB32)
         width = source.width()
         height = source.height()

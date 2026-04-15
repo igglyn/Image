@@ -4,10 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QColor, QImage
 
 
-ShaderKernel = Callable[[QImage], QImage]
+FilterSettings = dict[str, int | float | str | bool] | None
+ShaderKernel = Callable[[QImage, FilterSettings], QImage]
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,7 @@ class ShaderRuntime:
         self._kernels: dict[str, ShaderKernel] = {
             "grayscale": self._grayscale_kernel,
             "invert": self._invert_kernel,
+            "box_blur": self._box_blur_kernel,
         }
 
     def has_program(self, shader_path: str | None) -> bool:
@@ -46,16 +48,22 @@ class ShaderRuntime:
             return
         self._programs[shader_path] = ShaderProgram(key=key, path=path)
 
-    def run(self, filter_key: str, shader_path: str | None, image: QImage) -> QImage | None:
+    def run(
+        self,
+        filter_key: str,
+        shader_path: str | None,
+        image: QImage,
+        settings: FilterSettings = None,
+    ) -> QImage | None:
         if shader_path is None or shader_path not in self._programs:
             return None
         kernel = self._kernels.get(filter_key)
         if kernel is None:
             return None
-        return kernel(image)
+        return kernel(image, settings)
 
     @staticmethod
-    def _grayscale_kernel(image: QImage) -> QImage:
+    def _grayscale_kernel(image: QImage, _settings: FilterSettings = None) -> QImage:
         source = image.convertToFormat(QImage.Format.Format_ARGB32)
         gray = source.convertToFormat(QImage.Format.Format_Grayscale8)
         out = QImage(source.width(), source.height(), QImage.Format.Format_ARGB32)
@@ -79,7 +87,56 @@ class ShaderRuntime:
         return out
 
     @staticmethod
-    def _invert_kernel(image: QImage) -> QImage:
+    def _invert_kernel(image: QImage, _settings: FilterSettings = None) -> QImage:
         out = image.convertToFormat(QImage.Format.Format_ARGB32)
         out.invertPixels(QImage.InvertMode.InvertRgb)
+        return out
+
+    @staticmethod
+    def _box_blur_kernel(image: QImage, settings: FilterSettings = None) -> QImage:
+        source = image.convertToFormat(QImage.Format.Format_ARGB32)
+        width = source.width()
+        height = source.height()
+        out = QImage(width, height, QImage.Format.Format_ARGB32)
+
+        raw_radius = (settings or {}).get("radius", 1)
+        try:
+            radius = int(raw_radius)
+        except (TypeError, ValueError):
+            radius = 1
+        radius = max(0, min(32, radius))
+
+        for y in range(height):
+            for x in range(width):
+                r_total = 0
+                g_total = 0
+                b_total = 0
+                a_total = 0
+                count = 0
+
+                for ky in range(-radius, radius + 1):
+                    yy = y + ky
+                    if yy < 0 or yy >= height:
+                        continue
+                    for kx in range(-radius, radius + 1):
+                        xx = x + kx
+                        if xx < 0 or xx >= width:
+                            continue
+                        c = source.pixelColor(xx, yy)
+                        r_total += c.red()
+                        g_total += c.green()
+                        b_total += c.blue()
+                        a_total += c.alpha()
+                        count += 1
+
+                out.setPixelColor(
+                    x,
+                    y,
+                    QColor(
+                        r_total // count,
+                        g_total // count,
+                        b_total // count,
+                        a_total // count,
+                    ),
+                )
         return out
