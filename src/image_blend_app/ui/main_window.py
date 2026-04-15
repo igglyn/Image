@@ -136,12 +136,11 @@ class MainWindow(QMainWindow):
         controls.addRow("Opacity", self.node_opacity_slider)
         options_layout.addLayout(controls)
 
+        self.effect_settings_group = QGroupBox("Effect Settings")
         self.effect_settings_layout = QFormLayout()
-        self.effect_settings_empty = QLabel("No additional settings for this selection.")
-        self.blur_radius_spin = QSpinBox()
-        self.blur_radius_spin.setRange(0, 32)
-        self.blur_radius_spin.valueChanged.connect(self._on_blur_radius_changed)
-        options_layout.addLayout(self.effect_settings_layout)
+        self.effect_settings_group.setLayout(self.effect_settings_layout)
+        self.effect_settings_empty = QLabel("Select an effect to edit its parameters.")
+        options_layout.addWidget(self.effect_settings_group)
 
         effect_buttons = QHBoxLayout()
         remove_filter_btn = QPushButton("Remove Effect")
@@ -412,9 +411,7 @@ class MainWindow(QMainWindow):
         if branch is None:
             return
         key = str(item.data(Qt.ItemDataRole.UserRole))
-        settings: dict[str, int | float | str | bool] = {}
-        if key == "box_blur":
-            settings["radius"] = 1
+        settings = self._default_filter_settings(key)
         branch.filter_stack.append(FilterStackItem(filter_key=key, settings=settings))
         self._rebuild_structure_tree()
         self._refresh_effect_settings()
@@ -574,26 +571,34 @@ class MainWindow(QMainWindow):
         self._clear_effect_settings_layout()
         effect = self._active_stack_item()
         if effect is None:
-            branch = self._active_branch()
-            if branch is not None and branch.filter_stack:
-                effect = branch.filter_stack[0]
-        if effect is None:
             self.effect_settings_layout.addRow(self.effect_settings_empty)
             return
 
         if effect.filter_key == "box_blur":
+            self._normalize_filter_settings(effect)
             radius = effect.settings.get("radius", 1)
             try:
                 radius_value = int(radius)
             except (TypeError, ValueError):
                 radius_value = 1
-            self.blur_radius_spin.blockSignals(True)
-            self.blur_radius_spin.setValue(max(0, min(32, radius_value)))
-            self.blur_radius_spin.blockSignals(False)
-            self.effect_settings_layout.addRow("Radius", self.blur_radius_spin)
+            blur_radius_spin = QSpinBox()
+            blur_radius_spin.setRange(0, 32)
+            blur_radius_spin.setValue(max(0, min(32, radius_value)))
+            blur_radius_spin.valueChanged.connect(self._on_blur_radius_changed)
+            self.effect_settings_layout.addRow("Radius", blur_radius_spin)
             return
 
         self.effect_settings_layout.addRow(self.effect_settings_empty)
+
+    def _default_filter_settings(self, filter_key: str) -> dict[str, int | float | str | bool]:
+        if filter_key == "box_blur":
+            return {"radius": 1}
+        return {}
+
+    def _normalize_filter_settings(self, effect: FilterStackItem) -> None:
+        defaults = self._default_filter_settings(effect.filter_key)
+        for key, value in defaults.items():
+            effect.settings.setdefault(key, value)
 
     def _on_blur_radius_changed(self, value: int) -> None:
         effect = self._active_stack_item()
