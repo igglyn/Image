@@ -29,7 +29,7 @@ FILTER_BLEND_MODE_MAP = {
 @dataclass
 class BranchCache:
     source_signature: tuple[int, str | None, int]
-    step_signatures: list[tuple[str, bool, float, str]]
+    step_signatures: list[tuple[str, bool, float, str, tuple[tuple[str, int | float | str | bool], ...]]]
     stage_images: list[QImage]
 
 
@@ -113,7 +113,13 @@ class LayerCompositor:
         source = source_image.convertToFormat(QImage.Format.Format_ARGB32)
         source_signature = (source.cacheKey(), source_id, len(branch.filter_stack))
         step_signatures = [
-            (item.filter_key, item.enabled, round(item.opacity, 4), item.blend_mode)
+            (
+                item.filter_key,
+                item.enabled,
+                round(item.opacity, 4),
+                item.blend_mode,
+                self._settings_signature(item.settings),
+            )
             for item in branch.filter_stack
         ]
 
@@ -138,7 +144,11 @@ class LayerCompositor:
             if item.enabled:
                 image_filter = self._filters.get(item.filter_key)
                 if image_filter is not None:
-                    filtered = image_filter.apply(current, shader_runtime=self._shader_runtime)
+                    filtered = image_filter.apply(
+                        current,
+                        shader_runtime=self._shader_runtime,
+                        settings=item.settings,
+                    )
                     current = self._blend_images(current, filtered, item)
             stage_images.append(QImage(current))
 
@@ -148,6 +158,10 @@ class LayerCompositor:
             stage_images=stage_images,
         )
         return current
+
+    @staticmethod
+    def _settings_signature(settings: dict[str, int | float | str | bool]) -> tuple[tuple[str, int | float | str | bool], ...]:
+        return tuple(sorted((str(key), value) for key, value in settings.items()))
 
     def _blend_images(self, base: QImage, top: QImage, item: FilterStackItem) -> QImage:
         out = QImage(base)

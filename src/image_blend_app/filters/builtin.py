@@ -12,9 +12,9 @@ class GrayscaleFilter(ImageFilter):
         shader_path="shaders/grayscale.comp",
     )
 
-    def apply(self, image: QImage, shader_runtime=None) -> QImage:
+    def apply(self, image: QImage, shader_runtime=None, settings=None) -> QImage:
         if shader_runtime is not None:
-            shader_result = shader_runtime.run(self.meta.key, self.meta.shader_path, image)
+            shader_result = shader_runtime.run(self.meta.key, self.meta.shader_path, image, settings=settings)
             if shader_result is not None:
                 return shader_result
 
@@ -34,9 +34,9 @@ class InvertFilter(ImageFilter):
         shader_path="shaders/invert.comp",
     )
 
-    def apply(self, image: QImage, shader_runtime=None) -> QImage:
+    def apply(self, image: QImage, shader_runtime=None, settings=None) -> QImage:
         if shader_runtime is not None:
-            shader_result = shader_runtime.run(self.meta.key, self.meta.shader_path, image)
+            shader_result = shader_runtime.run(self.meta.key, self.meta.shader_path, image, settings=settings)
             if shader_result is not None:
                 return shader_result
 
@@ -52,12 +52,22 @@ class BoxBlurFilter(ImageFilter):
         shader_path="shaders/box_blur.comp",
     )
 
-    def apply(self, image: QImage, shader_runtime=None) -> QImage:
+    def apply(self, image: QImage, shader_runtime=None, settings=None) -> QImage:
+        if shader_runtime is not None:
+            shader_result = shader_runtime.run(self.meta.key, self.meta.shader_path, image, settings=settings)
+            if shader_result is not None:
+                return shader_result
+
         source = image.convertToFormat(QImage.Format.Format_ARGB32)
         width = source.width()
         height = source.height()
         out = QImage(width, height, QImage.Format.Format_ARGB32)
-        radius = 1
+        raw_radius = (settings or {}).get("radius", 1)
+        try:
+            radius = int(raw_radius)
+        except (TypeError, ValueError):
+            radius = 1
+        radius = max(0, min(32, radius))
 
         for y in range(height):
             for x in range(width):
@@ -102,7 +112,7 @@ class EdgeDetectionFilter(ImageFilter):
         shader_path="shaders/edge_detect.comp",
     )
 
-    def apply(self, image: QImage, shader_runtime=None) -> QImage:
+    def apply(self, image: QImage, shader_runtime=None, settings=None) -> QImage:
         source = image.convertToFormat(QImage.Format.Format_ARGB32)
         width = source.width()
         height = source.height()

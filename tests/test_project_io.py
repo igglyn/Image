@@ -65,7 +65,13 @@ class ProjectIOTests(unittest.TestCase):
                         opacity=1.0,
                         blend_mode="source_over",
                         filter_stack=[
-                            FilterStackItem(filter_key="grayscale", enabled=True, opacity=0.5, blend_mode="replace")
+                            FilterStackItem(
+                                filter_key="grayscale",
+                                enabled=True,
+                                opacity=0.5,
+                                blend_mode="replace",
+                                settings={"strength": 2},
+                            )
                         ],
                     )
                 ],
@@ -85,6 +91,7 @@ class ProjectIOTests(unittest.TestCase):
             self.assertEqual(loaded.branches[0].name, "Base Branch")
             self.assertEqual(len(loaded.branches[0].filter_stack), 1)
             self.assertEqual(loaded.branches[0].filter_stack[0].filter_key, "grayscale")
+            self.assertEqual(loaded.branches[0].filter_stack[0].settings, {"strength": 2})
 
     def test_save_uses_relative_source_path_within_project_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
