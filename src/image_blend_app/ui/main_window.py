@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -16,8 +17,8 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QMessageBox,
     QSlider,
+    QSpinBox,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -48,7 +49,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         root_layout = QHBoxLayout(root)
 
-        # Left: Structure tree (group -> image -> effects)
         left_panel = QVBoxLayout()
         root_layout.addLayout(left_panel, 2)
 
@@ -63,23 +63,14 @@ class MainWindow(QMainWindow):
         tree_buttons = QHBoxLayout()
         import_btn = QPushButton("Import")
         import_btn.clicked.connect(self._import_images)
-        save_project_btn = QPushButton("Save")
+        save_project_btn = QPushButton("Save Project")
         save_project_btn.clicked.connect(self._save_project)
-        load_project_btn = QPushButton("Load")
+        load_project_btn = QPushButton("Load Project")
         load_project_btn.clicked.connect(self._load_project)
         tree_buttons.addWidget(import_btn)
         tree_buttons.addWidget(save_project_btn)
         tree_buttons.addWidget(load_project_btn)
         left_panel.addLayout(tree_buttons)
-
-        project_buttons = QHBoxLayout()
-        save_project_btn = QPushButton("Save Project")
-        save_project_btn.clicked.connect(self._save_project)
-        load_project_btn = QPushButton("Load Project")
-        load_project_btn.clicked.connect(self._load_project)
-        project_buttons.addWidget(save_project_btn)
-        project_buttons.addWidget(load_project_btn)
-        left_panel.addLayout(project_buttons)
 
         layer_buttons = QHBoxLayout()
         remove_layer_btn = QPushButton("Remove Image")
@@ -96,7 +87,6 @@ class MainWindow(QMainWindow):
         layer_buttons.addWidget(dup_layer_btn)
         left_panel.addLayout(layer_buttons)
 
-        # Center: image preview
         center_panel = QVBoxLayout()
         root_layout.addLayout(center_panel, 3)
         self.preview = QLabel("Import images to begin")
@@ -105,7 +95,6 @@ class MainWindow(QMainWindow):
         self.preview.setStyleSheet("background: #1b1b1b; color: #ddd;")
         center_panel.addWidget(self.preview)
 
-        # Right: three stacked sections
         right_panel = QVBoxLayout()
         root_layout.addLayout(right_panel, 2)
 
@@ -145,8 +134,16 @@ class MainWindow(QMainWindow):
         self.node_opacity_slider.setRange(0, 100)
         self.node_opacity_slider.valueChanged.connect(self._on_selected_opacity_changed)
         controls.addRow("Opacity", self.node_opacity_slider)
-
         options_layout.addLayout(controls)
+
+        self.effect_settings_group = QGroupBox("Effect Settings")
+        self.effect_settings_layout = QFormLayout()
+        self.effect_settings_group.setLayout(self.effect_settings_layout)
+        self.effect_settings_empty = QLabel("No configurable settings for this effect yet.")
+        self.blur_radius_spin = QSpinBox()
+        self.blur_radius_spin.setRange(0, 32)
+        self.blur_radius_spin.valueChanged.connect(self._on_blur_radius_changed)
+        options_layout.addWidget(self.effect_settings_group)
 
         effect_buttons = QHBoxLayout()
         remove_filter_btn = QPushButton("Remove Effect")
@@ -162,6 +159,7 @@ class MainWindow(QMainWindow):
 
         self._populate_available_filters()
         self._rebuild_structure_tree()
+        self._refresh_effect_settings()
 
     def _populate_available_filters(self) -> None:
         self.available_filters.clear()
@@ -234,12 +232,14 @@ class MainWindow(QMainWindow):
             for effect_index, effect in enumerate(branch.filter_stack):
                 filter_obj = self._filters.get(effect.filter_key)
                 effect_name = filter_obj.meta.display_name if filter_obj else effect.filter_key
-                effect_item = QTreeWidgetItem([
-                    f"Effect: {effect_name}",
-                    "",
-                    effect.blend_mode,
-                    f"{int(effect.opacity * 100)}%",
-                ])
+                effect_item = QTreeWidgetItem(
+                    [
+                        f"Effect: {effect_name}",
+                        "",
+                        effect.blend_mode,
+                        f"{int(effect.opacity * 100)}%",
+                    ]
+                )
                 effect_item.setData(0, NODE_TYPE_ROLE, "effect")
                 effect_item.setData(0, LAYER_INDEX_ROLE, layer_index)
                 effect_item.setData(0, EFFECT_INDEX_ROLE, effect_index)
@@ -282,30 +282,6 @@ class MainWindow(QMainWindow):
 
     def _save_project(self) -> None:
         if not self._layers:
-            QMessageBox.information(self, "Save Project", "There are no images to save.")
-            return
-        file, _ = QFileDialog.getSaveFileName(self, "Save project", "", "Image Blend Project (*.json)")
-        if not file:
-            return
-        try:
-            save_project(Path(file), self._layers)
-        except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Save Project Failed", str(exc))
-
-    def _load_project(self) -> None:
-        file, _ = QFileDialog.getOpenFileName(self, "Load project", "", "Image Blend Project (*.json)")
-        if not file:
-            return
-        try:
-            self._layers = load_project(Path(file))
-        except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(self, "Load Project Failed", str(exc))
-            return
-        self._rebuild_structure_tree()
-        self._render()
-
-    def _save_project(self) -> None:
-        if not self._layers:
             QMessageBox.information(self, "Save Project", "There are no layers to save.")
             return
         file, _ = QFileDialog.getSaveFileName(
@@ -333,14 +309,12 @@ class MainWindow(QMainWindow):
             return
         path = Path(file)
         try:
-            loaded_layers = load_project(path)
+            self._layers = load_project(path)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Load Project Failed", str(exc))
             return
-        self._layers = loaded_layers
-        self._rebuild_layer_list(selected_index=0)
-        if not self._layers:
-            self.stack_list.clear()
+        self._rebuild_structure_tree()
+        self._refresh_effect_settings()
         self._render()
 
     def _remove_layer(self) -> None:
@@ -349,6 +323,7 @@ class MainWindow(QMainWindow):
             return
         self._layers.remove(layer)
         self._rebuild_structure_tree()
+        self._refresh_effect_settings()
         self._render()
 
     def _duplicate_layer(self) -> None:
@@ -371,6 +346,7 @@ class MainWindow(QMainWindow):
                         enabled=stack_item.enabled,
                         opacity=stack_item.opacity,
                         blend_mode=stack_item.blend_mode,
+                        settings=dict(stack_item.settings),
                     )
                     for stack_item in branch.filter_stack
                 ],
@@ -394,6 +370,7 @@ class MainWindow(QMainWindow):
             )
         )
         self._rebuild_structure_tree()
+        self._refresh_effect_settings()
         self._render()
 
     def _move_layer(self, offset: int) -> None:
@@ -412,9 +389,13 @@ class MainWindow(QMainWindow):
         branch = self._active_branch()
         if branch is None:
             return
-        key = item.data(Qt.ItemDataRole.UserRole)
-        branch.filter_stack.append(FilterStackItem(filter_key=str(key)))
+        key = str(item.data(Qt.ItemDataRole.UserRole))
+        settings: dict[str, int | float | str | bool] = {}
+        if key == "box_blur":
+            settings["radius"] = 1
+        branch.filter_stack.append(FilterStackItem(filter_key=key, settings=settings))
         self._rebuild_structure_tree()
+        self._refresh_effect_settings()
         self._render()
 
     def _remove_stack_item(self) -> None:
@@ -426,6 +407,7 @@ class MainWindow(QMainWindow):
             return
         branch.filter_stack.pop(effect_index)
         self._rebuild_structure_tree()
+        self._refresh_effect_settings()
         self._render()
 
     def _move_stack_item(self, offset: int) -> None:
@@ -438,6 +420,7 @@ class MainWindow(QMainWindow):
             return
         branch.filter_stack[idx], branch.filter_stack[new_idx] = branch.filter_stack[new_idx], branch.filter_stack[idx]
         self._rebuild_structure_tree()
+        self._refresh_effect_settings()
         self._render()
 
     def _on_tree_item_changed(self, item: QTreeWidgetItem, _column: int) -> None:
@@ -462,6 +445,7 @@ class MainWindow(QMainWindow):
         selected_item = self._selected_tree_item()
         if selected_item is None:
             self.options_target.setText("Select an image or effect in the tree")
+            self._refresh_effect_settings()
             return
 
         node_type = selected_item.data(0, NODE_TYPE_ROLE)
@@ -491,6 +475,8 @@ class MainWindow(QMainWindow):
             self.node_opacity_slider.blockSignals(False)
         else:
             self.options_target.setText("Group")
+
+        self._refresh_effect_settings()
 
     def _set_blend_combo(self, modes: object, selected_mode: str) -> None:
         self.node_blend_combo.blockSignals(True)
@@ -556,6 +542,40 @@ class MainWindow(QMainWindow):
                 return
             effect.opacity = opacity
         selected_item.setText(3, f"{value}%")
+        self._render()
+
+    def _clear_effect_settings_layout(self) -> None:
+        while self.effect_settings_layout.rowCount() > 0:
+            self.effect_settings_layout.removeRow(0)
+
+    def _refresh_effect_settings(self) -> None:
+        self._clear_effect_settings_layout()
+        effect = self._active_stack_item()
+        if effect is None:
+            self.effect_settings_group.setEnabled(False)
+            self.effect_settings_layout.addRow(self.effect_settings_empty)
+            return
+
+        self.effect_settings_group.setEnabled(True)
+        if effect.filter_key == "box_blur":
+            radius = effect.settings.get("radius", 1)
+            try:
+                radius_value = int(radius)
+            except (TypeError, ValueError):
+                radius_value = 1
+            self.blur_radius_spin.blockSignals(True)
+            self.blur_radius_spin.setValue(max(0, min(32, radius_value)))
+            self.blur_radius_spin.blockSignals(False)
+            self.effect_settings_layout.addRow("Radius", self.blur_radius_spin)
+            return
+
+        self.effect_settings_layout.addRow(self.effect_settings_empty)
+
+    def _on_blur_radius_changed(self, value: int) -> None:
+        effect = self._active_stack_item()
+        if effect is None or effect.filter_key != "box_blur":
+            return
+        effect.settings["radius"] = int(value)
         self._render()
 
     def _render(self) -> None:

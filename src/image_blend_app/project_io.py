@@ -71,6 +71,7 @@ def _serialize_stack_item(item: FilterStackItem) -> dict[str, object]:
         "enabled": item.enabled,
         "opacity": item.opacity,
         "blend_mode": item.blend_mode,
+        "settings": item.settings,
     }
 
 
@@ -135,11 +136,19 @@ def _deserialize_stack_item(payload: dict[str, object]) -> FilterStackItem:
     filter_key = str(payload.get("filter_key") or "").strip()
     if not filter_key:
         raise ValueError("Filter stack item is missing filter_key")
+    raw_settings = payload.get("settings")
+    settings: dict[str, int | float | str | bool] = {}
+    if isinstance(raw_settings, dict):
+        for key, value in raw_settings.items():
+            if isinstance(key, str) and isinstance(value, (int, float, str, bool)):
+                settings[key] = value
+
     return FilterStackItem(
         filter_key=filter_key,
         enabled=bool(payload.get("enabled", True)),
         opacity=float(payload.get("opacity", 1.0)),
         blend_mode=str(payload.get("blend_mode") or "replace"),
+        settings=settings,
     )
 
 
