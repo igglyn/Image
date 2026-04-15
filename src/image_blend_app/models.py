@@ -17,6 +17,7 @@ class FilterStackItem:
     enabled: bool = True
     opacity: float = 1.0
     blend_mode: str = "replace"
+    settings: dict[str, int | float | str | bool] = field(default_factory=dict)
 
 
 @dataclass

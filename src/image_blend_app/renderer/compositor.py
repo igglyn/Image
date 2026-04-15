@@ -138,7 +138,11 @@ class LayerCompositor:
             if item.enabled:
                 image_filter = self._filters.get(item.filter_key)
                 if image_filter is not None:
-                    filtered = image_filter.apply(current, shader_runtime=self._shader_runtime)
+                    filtered = image_filter.apply(
+                        current,
+                        shader_runtime=self._shader_runtime,
+                        settings=item.settings,
+                    )
                     current = self._blend_images(current, filtered, item)
             stage_images.append(QImage(current))
 

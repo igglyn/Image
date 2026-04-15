@@ -18,7 +18,12 @@ class ImageFilter(ABC):
     meta: FilterMeta
 
     @abstractmethod
-    def apply(self, image: QImage, shader_runtime: ShaderRuntime | None = None) -> QImage:
+    def apply(
+        self,
+        image: QImage,
+        shader_runtime: ShaderRuntime | None = None,
+        settings: dict[str, int | float | str | bool] | None = None,
+    ) -> QImage:
         raise NotImplementedError
 
 
