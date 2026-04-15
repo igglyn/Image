@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QMainWindow,
     QPushButton,
+    QMessageBox,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
 
 from image_blend_app.filters.base import FilterRegistry
 from image_blend_app.models import FilterStackItem, ImageLayer, LayerBranch
+from image_blend_app.project_io import load_project, save_project
 from image_blend_app.renderer.compositor import BLEND_MODE_MAP, FILTER_BLEND_MODE_MAP, LayerCompositor
 
 
@@ -51,6 +53,15 @@ class MainWindow(QMainWindow):
         import_btn = QPushButton("Import Image(s)")
         import_btn.clicked.connect(self._import_images)
         left_panel.addWidget(import_btn)
+
+        project_buttons = QHBoxLayout()
+        save_project_btn = QPushButton("Save Project")
+        save_project_btn.clicked.connect(self._save_project)
+        load_project_btn = QPushButton("Load Project")
+        load_project_btn.clicked.connect(self._load_project)
+        project_buttons.addWidget(save_project_btn)
+        project_buttons.addWidget(load_project_btn)
+        left_panel.addLayout(project_buttons)
 
         layer_buttons = QHBoxLayout()
         remove_layer_btn = QPushButton("Remove")
@@ -209,6 +220,45 @@ class MainWindow(QMainWindow):
             layer = ImageLayer(name=path.name, source_path=path, image=image)
             self._layers.append(layer)
         self._rebuild_layer_list(selected_index=len(self._layers) - 1)
+        self._render()
+
+    def _save_project(self) -> None:
+        if not self._layers:
+            QMessageBox.information(self, "Save Project", "There are no layers to save.")
+            return
+        file, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save project",
+            "",
+            "Image Blend Project (*.json)",
+        )
+        if not file:
+            return
+        path = Path(file)
+        try:
+            save_project(path, self._layers)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Save Project Failed", str(exc))
+
+    def _load_project(self) -> None:
+        file, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load project",
+            "",
+            "Image Blend Project (*.json)",
+        )
+        if not file:
+            return
+        path = Path(file)
+        try:
+            loaded_layers = load_project(path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Load Project Failed", str(exc))
+            return
+        self._layers = loaded_layers
+        self._rebuild_layer_list(selected_index=0)
+        if not self._layers:
+            self.stack_list.clear()
         self._render()
 
     def _remove_layer(self) -> None:
