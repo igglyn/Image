@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -101,6 +101,12 @@ class MainWindow(QMainWindow):
         right_panel.addWidget(QLabel("Import Area (thumbnails)"))
         self.source_images_list = QListWidget()
         self.source_images_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        self.source_images_list.setViewMode(QListWidget.ViewMode.IconMode)
+        self.source_images_list.setIconSize(QSize(120, 120))
+        self.source_images_list.setResizeMode(QListWidget.ResizeMode.Adjust)
+        self.source_images_list.setSpacing(10)
+        self.source_images_list.setWordWrap(True)
+        self.source_images_list.setUniformItemSizes(True)
         right_panel.addWidget(self.source_images_list, 1)
 
         right_panel.addWidget(QLabel("Filters"))
@@ -252,7 +258,16 @@ class MainWindow(QMainWindow):
         self.source_images_list.clear()
         for index, layer in enumerate(self._layers, start=1):
             source_path = str(layer.source_path) if str(layer.source_path) else "Untitled"
-            self.source_images_list.addItem(f"{index}. {layer.name} — {source_path}")
+            item = QListWidgetItem(f"{index}. {layer.name}\n{source_path}")
+            preview_image = layer.image.scaled(
+                self.source_images_list.iconSize(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            item.setIcon(QIcon(QPixmap.fromImage(preview_image)))
+            item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
+            item.setSizeHint(QSize(160, 180))
+            self.source_images_list.addItem(item)
 
     def _import_images(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(self, "Select images", "", "Images (*.png *.jpg *.jpeg *.bmp)")
