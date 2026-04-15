@@ -14,22 +14,30 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QSlider,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
 from image_blend_app.filters.base import FilterRegistry
 from image_blend_app.models import FilterStackItem, ImageLayer, LayerBranch
+from image_blend_app.project_io import load_project, save_project
 from image_blend_app.renderer.compositor import BLEND_MODE_MAP, FILTER_BLEND_MODE_MAP, LayerCompositor
+
+NODE_TYPE_ROLE = int(Qt.ItemDataRole.UserRole)
+LAYER_INDEX_ROLE = int(Qt.ItemDataRole.UserRole) + 1
+EFFECT_INDEX_ROLE = int(Qt.ItemDataRole.UserRole) + 2
 
 
 class MainWindow(QMainWindow):
     def __init__(self, filter_registry: FilterRegistry) -> None:
         super().__init__()
         self.setWindowTitle("Image Blend Studio")
-        self.resize(1400, 820)
+        self.resize(1450, 860)
 
         self._layers: list[ImageLayer] = []
         self._filters = filter_registry
@@ -39,25 +47,36 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         root_layout = QHBoxLayout(root)
 
+        # Left: Structure tree (group -> image -> effects)
         left_panel = QVBoxLayout()
-        root_layout.addLayout(left_panel, 1)
+        root_layout.addLayout(left_panel, 2)
 
-        self.layer_list = QListWidget()
-        self.layer_list.currentRowChanged.connect(self._on_layer_selected)
-        self.layer_list.itemChanged.connect(self._on_layer_enabled_changed)
-        left_panel.addWidget(QLabel("Layers (topmost = last)"))
-        left_panel.addWidget(self.layer_list)
+        left_panel.addWidget(QLabel("Structure (Group / Image / Effects)"))
+        self.structure_tree = QTreeWidget()
+        self.structure_tree.setColumnCount(4)
+        self.structure_tree.setHeaderLabels(["Item", "Visible", "Blend", "Opacity"])
+        self.structure_tree.itemSelectionChanged.connect(self._on_tree_selection_changed)
+        self.structure_tree.itemChanged.connect(self._on_tree_item_changed)
+        left_panel.addWidget(self.structure_tree)
 
-        import_btn = QPushButton("Import Image(s)")
+        tree_buttons = QHBoxLayout()
+        import_btn = QPushButton("Import")
         import_btn.clicked.connect(self._import_images)
-        left_panel.addWidget(import_btn)
+        save_project_btn = QPushButton("Save")
+        save_project_btn.clicked.connect(self._save_project)
+        load_project_btn = QPushButton("Load")
+        load_project_btn.clicked.connect(self._load_project)
+        tree_buttons.addWidget(import_btn)
+        tree_buttons.addWidget(save_project_btn)
+        tree_buttons.addWidget(load_project_btn)
+        left_panel.addLayout(tree_buttons)
 
         layer_buttons = QHBoxLayout()
-        remove_layer_btn = QPushButton("Remove")
+        remove_layer_btn = QPushButton("Remove Image")
         remove_layer_btn.clicked.connect(self._remove_layer)
-        up_layer_btn = QPushButton("Up")
+        up_layer_btn = QPushButton("Move Up")
         up_layer_btn.clicked.connect(lambda: self._move_layer(-1))
-        down_layer_btn = QPushButton("Down")
+        down_layer_btn = QPushButton("Move Down")
         down_layer_btn.clicked.connect(lambda: self._move_layer(1))
         dup_layer_btn = QPushButton("Duplicate")
         dup_layer_btn.clicked.connect(self._duplicate_layer)
@@ -67,83 +86,66 @@ class MainWindow(QMainWindow):
         layer_buttons.addWidget(dup_layer_btn)
         left_panel.addLayout(layer_buttons)
 
-        layer_controls = QFormLayout()
-        self.layer_blend_combo = QComboBox()
-        for mode in BLEND_MODE_MAP:
-            self.layer_blend_combo.addItem(mode)
-        self.layer_blend_combo.currentTextChanged.connect(self._on_layer_blend_changed)
-        layer_controls.addRow("Layer Blend", self.layer_blend_combo)
-
-        self.layer_opacity_slider = QSlider(Qt.Orientation.Horizontal)
-        self.layer_opacity_slider.setRange(0, 100)
-        self.layer_opacity_slider.setValue(100)
-        self.layer_opacity_slider.valueChanged.connect(self._on_layer_opacity_changed)
-        layer_controls.addRow("Layer Opacity", self.layer_opacity_slider)
-
-        self.layer_visible_checkbox = QCheckBox("Visible")
-        self.layer_visible_checkbox.setChecked(True)
-        self.layer_visible_checkbox.toggled.connect(self._on_layer_visible_changed)
-        layer_controls.addRow(self.layer_visible_checkbox)
-        left_panel.addLayout(layer_controls)
-
-        middle_panel = QVBoxLayout()
-        root_layout.addLayout(middle_panel, 1)
-
-        middle_panel.addWidget(QLabel("Import Area (Source Images In Play)"))
-        self.source_images_list = QListWidget()
-        self.source_images_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
-        middle_panel.addWidget(self.source_images_list)
-
-        import_controls = QHBoxLayout()
-        add_sources_btn = QPushButton("Add Source Image(s)")
-        add_sources_btn.clicked.connect(self._import_images)
-        import_controls.addWidget(add_sources_btn)
-        middle_panel.addLayout(import_controls)
-
-        middle_panel.addWidget(QLabel("Available Filters (double-click to add to selected layer)"))
-        self.available_filters = QListWidget()
-        self.available_filters.itemDoubleClicked.connect(self._on_add_filter)
-        middle_panel.addWidget(self.available_filters)
-
-        middle_panel.addWidget(QLabel("Selected Layer Filter Stack"))
-        self.stack_list = QListWidget()
-        self.stack_list.currentRowChanged.connect(self._on_stack_item_selected)
-        self.stack_list.itemChanged.connect(self._on_stack_enabled_changed)
-        middle_panel.addWidget(self.stack_list)
-
-        stack_buttons = QHBoxLayout()
-        remove_btn = QPushButton("Remove")
-        remove_btn.clicked.connect(self._remove_stack_item)
-        up_btn = QPushButton("Up")
-        up_btn.clicked.connect(lambda: self._move_stack_item(-1))
-        down_btn = QPushButton("Down")
-        down_btn.clicked.connect(lambda: self._move_stack_item(1))
-        stack_buttons.addWidget(remove_btn)
-        stack_buttons.addWidget(up_btn)
-        stack_buttons.addWidget(down_btn)
-        middle_panel.addLayout(stack_buttons)
-
-        stack_controls = QFormLayout()
-        self.filter_blend_combo = QComboBox()
-        for mode in FILTER_BLEND_MODE_MAP:
-            self.filter_blend_combo.addItem(mode)
-        self.filter_blend_combo.currentTextChanged.connect(self._on_stack_blend_changed)
-        stack_controls.addRow("Filter Blend", self.filter_blend_combo)
-
-        self.filter_opacity_slider = QSlider(Qt.Orientation.Horizontal)
-        self.filter_opacity_slider.setRange(0, 100)
-        self.filter_opacity_slider.setValue(100)
-        self.filter_opacity_slider.valueChanged.connect(self._on_stack_opacity_changed)
-        stack_controls.addRow("Filter Opacity", self.filter_opacity_slider)
-        middle_panel.addLayout(stack_controls)
-
+        # Center: image preview
+        center_panel = QVBoxLayout()
+        root_layout.addLayout(center_panel, 3)
         self.preview = QLabel("Import images to begin")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setMinimumSize(600, 600)
+        self.preview.setMinimumSize(700, 700)
         self.preview.setStyleSheet("background: #1b1b1b; color: #ddd;")
-        root_layout.addWidget(self.preview, 3)
+        center_panel.addWidget(self.preview)
+
+        # Right: three stacked sections
+        right_panel = QVBoxLayout()
+        root_layout.addLayout(right_panel, 2)
+
+        right_panel.addWidget(QLabel("Import Area (thumbnails)"))
+        self.source_images_list = QListWidget()
+        self.source_images_list.setSelectionMode(QListWidget.SelectionMode.NoSelection)
+        right_panel.addWidget(self.source_images_list, 1)
+
+        right_panel.addWidget(QLabel("Filters"))
+        self.available_filters = QListWidget()
+        self.available_filters.itemDoubleClicked.connect(self._on_add_filter)
+        right_panel.addWidget(self.available_filters, 1)
+
+        right_panel.addWidget(QLabel("Filter / Node Options"))
+        options_layout = QVBoxLayout()
+        right_panel.addLayout(options_layout, 1)
+
+        self.options_target = QLabel("Select an image or effect in the tree")
+        options_layout.addWidget(self.options_target)
+
+        controls = QFormLayout()
+        self.node_visible_checkbox = QCheckBox("Visible / Enabled")
+        self.node_visible_checkbox.toggled.connect(self._on_selected_visibility_changed)
+        controls.addRow(self.node_visible_checkbox)
+
+        self.node_blend_combo = QComboBox()
+        self.node_blend_combo.currentTextChanged.connect(self._on_selected_blend_changed)
+        controls.addRow("Blend", self.node_blend_combo)
+
+        self.node_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.node_opacity_slider.setRange(0, 100)
+        self.node_opacity_slider.valueChanged.connect(self._on_selected_opacity_changed)
+        controls.addRow("Opacity", self.node_opacity_slider)
+
+        options_layout.addLayout(controls)
+
+        effect_buttons = QHBoxLayout()
+        remove_filter_btn = QPushButton("Remove Effect")
+        remove_filter_btn.clicked.connect(self._remove_stack_item)
+        up_filter_btn = QPushButton("Effect Up")
+        up_filter_btn.clicked.connect(lambda: self._move_stack_item(-1))
+        down_filter_btn = QPushButton("Effect Down")
+        down_filter_btn.clicked.connect(lambda: self._move_stack_item(1))
+        effect_buttons.addWidget(remove_filter_btn)
+        effect_buttons.addWidget(up_filter_btn)
+        effect_buttons.addWidget(down_filter_btn)
+        options_layout.addLayout(effect_buttons)
 
         self._populate_available_filters()
+        self._rebuild_structure_tree()
 
     def _populate_available_filters(self) -> None:
         self.available_filters.clear()
@@ -152,46 +154,89 @@ class MainWindow(QMainWindow):
             item.setData(Qt.ItemDataRole.UserRole, image_filter.meta.key)
             self.available_filters.addItem(item)
 
+    def _selected_tree_item(self) -> QTreeWidgetItem | None:
+        selected = self.structure_tree.selectedItems()
+        return selected[0] if selected else None
+
     def _active_layer(self) -> ImageLayer | None:
-        idx = self.layer_list.currentRow()
-        if idx < 0 or idx >= len(self._layers):
+        selected_item = self._selected_tree_item()
+        if selected_item is None:
+            return self._layers[0] if self._layers else None
+
+        layer_index = selected_item.data(0, LAYER_INDEX_ROLE)
+        if layer_index is None and selected_item.parent() is not None:
+            layer_index = selected_item.parent().data(0, LAYER_INDEX_ROLE)
+        if not isinstance(layer_index, int):
             return None
-        return self._layers[idx]
+        if not (0 <= layer_index < len(self._layers)):
+            return None
+        return self._layers[layer_index]
 
     def _active_branch(self) -> LayerBranch | None:
         layer = self._active_layer()
-        if layer is None:
-            return None
-        if not layer.branches:
+        if layer is None or not layer.branches:
             return None
         return layer.branches[0]
 
+    def _selected_effect_index(self) -> int | None:
+        selected_item = self._selected_tree_item()
+        if selected_item is None:
+            return None
+        effect_index = selected_item.data(0, EFFECT_INDEX_ROLE)
+        return effect_index if isinstance(effect_index, int) else None
+
     def _active_stack_item(self) -> FilterStackItem | None:
         branch = self._active_branch()
-        if branch is None:
+        effect_index = self._selected_effect_index()
+        if branch is None or effect_index is None:
             return None
-        idx = self.stack_list.currentRow()
-        if idx < 0 or idx >= len(branch.filter_stack):
+        if not (0 <= effect_index < len(branch.filter_stack)):
             return None
-        return branch.filter_stack[idx]
+        return branch.filter_stack[effect_index]
 
-    def _rebuild_layer_list(self, selected_index: int | None = None) -> None:
-        self.layer_list.blockSignals(True)
-        self.layer_list.clear()
-        for layer in self._layers:
-            item = QListWidgetItem(layer.name)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Checked if layer.visible else Qt.CheckState.Unchecked)
-            self.layer_list.addItem(item)
-        self.layer_list.blockSignals(False)
+    def _rebuild_structure_tree(self) -> None:
+        self.structure_tree.blockSignals(True)
+        self.structure_tree.clear()
+
+        group_item = QTreeWidgetItem(["Main Group", "✓", "source_over", "100%"])
+        group_item.setData(0, NODE_TYPE_ROLE, "group")
+        group_item.setFlags(group_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        self.structure_tree.addTopLevelItem(group_item)
+
+        for layer_index, layer in enumerate(self._layers):
+            layer_item = QTreeWidgetItem([layer.name, "", layer.blend_mode, f"{int(layer.opacity * 100)}%"])
+            layer_item.setData(0, NODE_TYPE_ROLE, "image")
+            layer_item.setData(0, LAYER_INDEX_ROLE, layer_index)
+            layer_item.setFlags(layer_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            layer_item.setCheckState(0, Qt.CheckState.Checked if layer.visible else Qt.CheckState.Unchecked)
+            group_item.addChild(layer_item)
+
+            branch = layer.branches[0] if layer.branches else None
+            if branch is None:
+                continue
+
+            for effect_index, effect in enumerate(branch.filter_stack):
+                filter_obj = self._filters.get(effect.filter_key)
+                effect_name = filter_obj.meta.display_name if filter_obj else effect.filter_key
+                effect_item = QTreeWidgetItem([
+                    f"Effect: {effect_name}",
+                    "",
+                    effect.blend_mode,
+                    f"{int(effect.opacity * 100)}%",
+                ])
+                effect_item.setData(0, NODE_TYPE_ROLE, "effect")
+                effect_item.setData(0, LAYER_INDEX_ROLE, layer_index)
+                effect_item.setData(0, EFFECT_INDEX_ROLE, effect_index)
+                effect_item.setFlags(effect_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                effect_item.setCheckState(0, Qt.CheckState.Checked if effect.enabled else Qt.CheckState.Unchecked)
+                layer_item.addChild(effect_item)
+
+        group_item.setExpanded(True)
+        for idx in range(group_item.childCount()):
+            group_item.child(idx).setExpanded(True)
+
+        self.structure_tree.blockSignals(False)
         self._refresh_source_images_list()
-
-        if not self._layers:
-            return
-        if selected_index is None:
-            selected_index = min(len(self._layers) - 1, self.layer_list.currentRow())
-        selected_index = max(0, min(selected_index, len(self._layers) - 1))
-        self.layer_list.setCurrentRow(selected_index)
 
     def _refresh_source_images_list(self) -> None:
         self.source_images_list.clear()
@@ -206,19 +251,40 @@ class MainWindow(QMainWindow):
             image = QImage(str(path))
             if image.isNull():
                 continue
-            layer = ImageLayer(name=path.name, source_path=path, image=image)
-            self._layers.append(layer)
-        self._rebuild_layer_list(selected_index=len(self._layers) - 1)
+            self._layers.append(ImageLayer(name=path.name, source_path=path, image=image))
+        self._rebuild_structure_tree()
+        self._render()
+
+    def _save_project(self) -> None:
+        if not self._layers:
+            QMessageBox.information(self, "Save Project", "There are no images to save.")
+            return
+        file, _ = QFileDialog.getSaveFileName(self, "Save project", "", "Image Blend Project (*.json)")
+        if not file:
+            return
+        try:
+            save_project(Path(file), self._layers)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Save Project Failed", str(exc))
+
+    def _load_project(self) -> None:
+        file, _ = QFileDialog.getOpenFileName(self, "Load project", "", "Image Blend Project (*.json)")
+        if not file:
+            return
+        try:
+            self._layers = load_project(Path(file))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Load Project Failed", str(exc))
+            return
+        self._rebuild_structure_tree()
         self._render()
 
     def _remove_layer(self) -> None:
-        idx = self.layer_list.currentRow()
-        if idx < 0 or idx >= len(self._layers):
+        layer = self._active_layer()
+        if layer is None:
             return
-        self._layers.pop(idx)
-        self._rebuild_layer_list(selected_index=max(0, idx - 1))
-        if not self._layers:
-            self.stack_list.clear()
+        self._layers.remove(layer)
+        self._rebuild_structure_tree()
         self._render()
 
     def _duplicate_layer(self) -> None:
@@ -263,83 +329,19 @@ class MainWindow(QMainWindow):
                 branches=cloned_branches,
             )
         )
-        self._rebuild_layer_list(selected_index=len(self._layers) - 1)
+        self._rebuild_structure_tree()
         self._render()
 
     def _move_layer(self, offset: int) -> None:
-        idx = self.layer_list.currentRow()
-        if idx < 0 or idx >= len(self._layers):
+        layer = self._active_layer()
+        if layer is None:
             return
+        idx = self._layers.index(layer)
         new_idx = idx + offset
         if not (0 <= new_idx < len(self._layers)):
             return
         self._layers[idx], self._layers[new_idx] = self._layers[new_idx], self._layers[idx]
-        self._rebuild_layer_list(selected_index=new_idx)
-        self._render()
-
-    def _on_layer_enabled_changed(self, row_item: QListWidgetItem) -> None:
-        idx = self.layer_list.row(row_item)
-        if idx < 0 or idx >= len(self._layers):
-            return
-        checked = row_item.checkState() == Qt.CheckState.Checked
-        self._layers[idx].visible = checked
-        if idx == self.layer_list.currentRow():
-            self.layer_visible_checkbox.blockSignals(True)
-            self.layer_visible_checkbox.setChecked(checked)
-            self.layer_visible_checkbox.blockSignals(False)
-        self._render()
-
-    def _on_layer_selected(self, row: int) -> None:
-        if row < 0 or row >= len(self._layers):
-            return
-        layer = self._layers[row]
-        self.layer_blend_combo.setCurrentText(layer.blend_mode)
-        self.layer_opacity_slider.setValue(int(layer.opacity * 100))
-        self.layer_visible_checkbox.setChecked(layer.visible)
-        base_branch = self._active_branch()
-        if base_branch is None:
-            self.stack_list.clear()
-        else:
-            self._populate_stack(base_branch)
-        self._render()
-
-    def _populate_stack(self, branch: LayerBranch) -> None:
-        self.stack_list.blockSignals(True)
-        self.stack_list.clear()
-        for item in branch.filter_stack:
-            filter_obj = self._filters.get(item.filter_key)
-            name = filter_obj.meta.display_name if filter_obj else item.filter_key
-            row_item = QListWidgetItem(name)
-            row_item.setData(Qt.ItemDataRole.UserRole, item.filter_key)
-            row_item.setFlags(row_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            row_item.setCheckState(Qt.CheckState.Checked if item.enabled else Qt.CheckState.Unchecked)
-            self.stack_list.addItem(row_item)
-        self.stack_list.blockSignals(False)
-        if branch.filter_stack:
-            self.stack_list.setCurrentRow(0)
-
-    def _on_layer_blend_changed(self, value: str) -> None:
-        layer = self._active_layer()
-        if layer is None:
-            return
-        layer.blend_mode = value
-        self._render()
-
-    def _on_layer_opacity_changed(self, value: int) -> None:
-        layer = self._active_layer()
-        if layer is None:
-            return
-        layer.opacity = value / 100.0
-        self._render()
-
-    def _on_layer_visible_changed(self, checked: bool) -> None:
-        layer = self._active_layer()
-        if layer is None:
-            return
-        layer.visible = checked
-        current_item = self.layer_list.item(self.layer_list.currentRow())
-        if current_item is not None:
-            current_item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+        self._rebuild_structure_tree()
         self._render()
 
     def _on_add_filter(self, item: QListWidgetItem) -> None:
@@ -347,65 +349,149 @@ class MainWindow(QMainWindow):
         if branch is None:
             return
         key = item.data(Qt.ItemDataRole.UserRole)
-        branch.filter_stack.append(FilterStackItem(filter_key=key))
-        self._populate_stack(branch)
-        self.stack_list.setCurrentRow(len(branch.filter_stack) - 1)
+        branch.filter_stack.append(FilterStackItem(filter_key=str(key)))
+        self._rebuild_structure_tree()
         self._render()
 
     def _remove_stack_item(self) -> None:
         branch = self._active_branch()
-        idx = self.stack_list.currentRow()
-        if branch is None or idx < 0:
+        effect_index = self._selected_effect_index()
+        if branch is None or effect_index is None:
             return
-        branch.filter_stack.pop(idx)
-        self._populate_stack(branch)
-        if branch.filter_stack:
-            self.stack_list.setCurrentRow(min(idx, len(branch.filter_stack) - 1))
+        if not (0 <= effect_index < len(branch.filter_stack)):
+            return
+        branch.filter_stack.pop(effect_index)
+        self._rebuild_structure_tree()
         self._render()
 
     def _move_stack_item(self, offset: int) -> None:
         branch = self._active_branch()
-        idx = self.stack_list.currentRow()
-        if branch is None or idx < 0:
+        idx = self._selected_effect_index()
+        if branch is None or idx is None:
             return
         new_idx = idx + offset
         if not (0 <= new_idx < len(branch.filter_stack)):
             return
         branch.filter_stack[idx], branch.filter_stack[new_idx] = branch.filter_stack[new_idx], branch.filter_stack[idx]
-        self._populate_stack(branch)
-        self.stack_list.setCurrentRow(new_idx)
+        self._rebuild_structure_tree()
         self._render()
 
-    def _on_stack_item_selected(self, row: int) -> None:
-        branch = self._active_branch()
-        if branch is None or row < 0 or row >= len(branch.filter_stack):
+    def _on_tree_item_changed(self, item: QTreeWidgetItem, _column: int) -> None:
+        node_type = item.data(0, NODE_TYPE_ROLE)
+        layer = self._active_layer()
+        if layer is None:
             return
-        item = branch.filter_stack[row]
-        self.filter_blend_combo.setCurrentText(item.blend_mode)
-        self.filter_opacity_slider.setValue(int(item.opacity * 100))
 
-    def _on_stack_enabled_changed(self, row_item: QListWidgetItem) -> None:
-        branch = self._active_branch()
-        if branch is None:
-            return
-        idx = self.stack_list.row(row_item)
-        if idx < 0 or idx >= len(branch.filter_stack):
-            return
-        branch.filter_stack[idx].enabled = row_item.checkState() == Qt.CheckState.Checked
+        if node_type == "image":
+            layer.visible = item.checkState(0) == Qt.CheckState.Checked
+            item.setText(1, "✓" if layer.visible else "✕")
+        elif node_type == "effect":
+            effect = self._active_stack_item()
+            if effect is None:
+                return
+            effect.enabled = item.checkState(0) == Qt.CheckState.Checked
+            item.setText(1, "✓" if effect.enabled else "✕")
+
         self._render()
 
-    def _on_stack_blend_changed(self, value: str) -> None:
-        item = self._active_stack_item()
-        if item is None:
+    def _on_tree_selection_changed(self) -> None:
+        selected_item = self._selected_tree_item()
+        if selected_item is None:
+            self.options_target.setText("Select an image or effect in the tree")
             return
-        item.blend_mode = value
+
+        node_type = selected_item.data(0, NODE_TYPE_ROLE)
+        if node_type == "image":
+            layer = self._active_layer()
+            if layer is None:
+                return
+            self.options_target.setText(f"Image: {layer.name}")
+            self.node_visible_checkbox.blockSignals(True)
+            self.node_visible_checkbox.setChecked(layer.visible)
+            self.node_visible_checkbox.blockSignals(False)
+            self._set_blend_combo(BLEND_MODE_MAP.keys(), layer.blend_mode)
+            self.node_opacity_slider.blockSignals(True)
+            self.node_opacity_slider.setValue(int(layer.opacity * 100))
+            self.node_opacity_slider.blockSignals(False)
+        elif node_type == "effect":
+            effect = self._active_stack_item()
+            if effect is None:
+                return
+            self.options_target.setText("Effect")
+            self.node_visible_checkbox.blockSignals(True)
+            self.node_visible_checkbox.setChecked(effect.enabled)
+            self.node_visible_checkbox.blockSignals(False)
+            self._set_blend_combo(FILTER_BLEND_MODE_MAP.keys(), effect.blend_mode)
+            self.node_opacity_slider.blockSignals(True)
+            self.node_opacity_slider.setValue(int(effect.opacity * 100))
+            self.node_opacity_slider.blockSignals(False)
+        else:
+            self.options_target.setText("Group")
+
+    def _set_blend_combo(self, modes: object, selected_mode: str) -> None:
+        self.node_blend_combo.blockSignals(True)
+        self.node_blend_combo.clear()
+        for mode in modes:
+            self.node_blend_combo.addItem(str(mode))
+        self.node_blend_combo.setCurrentText(selected_mode)
+        self.node_blend_combo.blockSignals(False)
+
+    def _on_selected_visibility_changed(self, checked: bool) -> None:
+        selected_item = self._selected_tree_item()
+        if selected_item is None:
+            return
+        node_type = selected_item.data(0, NODE_TYPE_ROLE)
+        if node_type == "image":
+            layer = self._active_layer()
+            if layer is None:
+                return
+            layer.visible = checked
+            selected_item.setCheckState(0, Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+            selected_item.setText(1, "✓" if checked else "✕")
+        elif node_type == "effect":
+            effect = self._active_stack_item()
+            if effect is None:
+                return
+            effect.enabled = checked
+            selected_item.setCheckState(0, Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
+            selected_item.setText(1, "✓" if checked else "✕")
         self._render()
 
-    def _on_stack_opacity_changed(self, value: int) -> None:
-        item = self._active_stack_item()
-        if item is None:
+    def _on_selected_blend_changed(self, value: str) -> None:
+        selected_item = self._selected_tree_item()
+        if selected_item is None:
             return
-        item.opacity = value / 100.0
+        node_type = selected_item.data(0, NODE_TYPE_ROLE)
+        if node_type == "image":
+            layer = self._active_layer()
+            if layer is None:
+                return
+            layer.blend_mode = value
+        elif node_type == "effect":
+            effect = self._active_stack_item()
+            if effect is None:
+                return
+            effect.blend_mode = value
+        selected_item.setText(2, value)
+        self._render()
+
+    def _on_selected_opacity_changed(self, value: int) -> None:
+        selected_item = self._selected_tree_item()
+        if selected_item is None:
+            return
+        node_type = selected_item.data(0, NODE_TYPE_ROLE)
+        opacity = value / 100.0
+        if node_type == "image":
+            layer = self._active_layer()
+            if layer is None:
+                return
+            layer.opacity = opacity
+        elif node_type == "effect":
+            effect = self._active_stack_item()
+            if effect is None:
+                return
+            effect.opacity = opacity
+        selected_item.setText(3, f"{value}%")
         self._render()
 
     def _render(self) -> None:
