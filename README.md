@@ -34,6 +34,14 @@ image-blend-studio
 4. **Branch Composite**: visible branches are blended in list order.
 5. **Layer Composite**: final layer result blends into document with layer blend mode + opacity.
 
+## Project Save/Load
+
+Projects can now be saved and loaded from the left panel with **Save Project** and **Load Project**.
+
+- Save persists layer/branch/filter stack metadata into `project.json`.
+- Load restores structure and attempts to reconnect each layer source image from `source_path`.
+- Format details: [`PROJECT_FORMAT.md`](PROJECT_FORMAT.md)
+
 ## Performance Note
 
 The compositor caches per-branch intermediate stages and only recomputes from the first changed filter step, reducing lag when toggling/changing filters in long stacks.
@@ -42,7 +50,7 @@ Shader-backed filters are dispatched through a shared shader runtime hook, and a
 
 ## Next Steps
 
-1. Add project save/load (layers, branches, source links, stack state).
+1. Add tree-style groups/images/effects navigation with first-class visibility and blending controls.
 2. Add automation recording/playback for repeated edit macros.
 3. Add Vulkan runtime for SPIR-V dispatch and GPU compositing.
 4. Add export pipeline and larger image performance optimizations.
